@@ -11,6 +11,7 @@ using System.IdentityModel.Tokens.Jwt;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using JWTAPI.Models;
+using System.Security.Cryptography;
 
 namespace JWTAPI.BussinessLogic
 {
@@ -29,82 +30,81 @@ namespace JWTAPI.BussinessLogic
             
         }
 
-        public string LoginCheck (string Username , string password)
+        public UserDetails LoginCheck(string Username, string password)
+{
+    try
+    {
+        using (SqlConnection connection = new SqlConnection(GetConfigurationString()))
         {
-            string msg = string.Empty;
-            if(string.IsNullOrEmpty(Username) || string.IsNullOrEmpty(password))
+            string query = "SELECT UserID, PasswordHash, FirstName, LastName FROM Users WHERE Email = @Email AND IsActive = 1";
+            using (SqlCommand command = new SqlCommand(query, connection))
             {
-                return msg = "Please provide both email and password.";
-            }
-
-            try
-            {
-                using(SqlConnection connection = new SqlConnection(GetConfigurationString()))
+                command.Parameters.AddWithValue("@Email", Username);
+                connection.Open();
+                SqlDataReader reader = command.ExecuteReader();
+                if (reader.Read())
                 {
-                    string query = "SELECT UserID, PasswordHash, FirstName, LastName FROM Users WHERE Email = @Email AND IsActive = 1";
-                    using(SqlCommand command = new SqlCommand(query,connection))
+                    int userid = reader.GetInt32(0);
+                    string storedPasswordHash = reader.GetString(1);
+                    string firstName = reader.GetString(2);
+                    string lastName = reader.IsDBNull(3) ? "" : reader.GetString(3);
+
+                    if (password == storedPasswordHash)
                     {
-                        command.Parameters.AddWithValue("@Email", Username);
-                        connection.Open();
-                        SqlDataReader reader = command.ExecuteReader();
-                        if(reader.Read())
+                        var accessToken = GenerateAccessToken(Username);
+                        var refreshToken = GenerateRefreshToken();
+
+                        return new UserDetails
                         {
-                            int userid = reader.GetInt32(0);
-                            string storedPasswordHash = reader.GetString(1);
-                            string firstName = reader.GetString(2);
-                            string lastName = reader.IsDBNull(3) ? "" : reader.GetString(3); 
-
-                            if(password == storedPasswordHash)
-                            {
-                            //    var claims = new[] {
-                            //    new Claim(JwtRegisteredClaimNames.Sub, Configuration["Jwt:Subject"]),
-                            //    new Claim("UserName", Username)
-                            //    };
-
-                            //    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Configuration["Jwt:Key"]));
-                            //    var signIn = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-                            //    var token = new JwtSecurityToken(
-                            //    Configuration["Jwt:Issuer"],
-                            //    Configuration["Jwt:Audience"],
-                            //    claims,
-                            //    expires: DateTime.UtcNow.AddMinutes(5),
-                            //    signingCredentials: signIn);
-
-                            //    var jwtToken = new JwtSecurityTokenHandler().WriteToken(token);
-
-                            //    return jwtToken;
-
-                            var claims = new List<Claim>
-                            {
-                                new Claim(JwtRegisteredClaimNames.Email, Username)
-                            };
-                            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Configuration["Jwt:Key"]));
-                            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha512Signature);
-                            var tokendes = new SecurityTokenDescriptor
-                            {
-                                Subject = new ClaimsIdentity(claims),
-                                Expires = DateTime.UtcNow.AddMinutes(5),
-                                SigningCredentials = creds,
-                                Issuer = Configuration["Jwt:Issuer"],
-                                Audience = Configuration["Jwt:Audience"]
-
-                            };
-                            var tokenHandler = new JwtSecurityTokenHandler();
-
-                            var token = tokenHandler.CreateToken(tokendes);
-                            return tokenHandler.WriteToken(token);
-
-                            }
-                        }
+                            id = userid,
+                            name = $"{firstName} {lastName}",
+                            AccessToken = accessToken,
+                            RefreshToken = refreshToken
+                        };
                     }
                 }
             }
-            catch (Exception ex)
-            {
-                return msg = "An error occurred while processing your request.";
-            }
+        }
+        // If we get here, either the user wasn't found or the password was incorrect
+        return null;
+    }
+    catch (Exception ex)
+    {
+        // Log the exception here
+        Console.WriteLine($"An error occurred: {ex.Message}");
+        return null;
+    }
+}
 
-            return msg = "Invalid email or password.";
+        private string GenerateAccessToken(string email)
+        {
+            var claims = new List<Claim>
+            {
+             new Claim(JwtRegisteredClaimNames.Email, email)
+            };
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Configuration["Jwt:Key"]));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha512Signature);
+            var tokendes = new SecurityTokenDescriptor
+        {
+            Subject = new ClaimsIdentity(claims),
+            Expires = DateTime.UtcNow.AddMinutes(15), // Short-lived access token
+            SigningCredentials = creds,
+            Issuer = Configuration["Jwt:Issuer"],
+            Audience = Configuration["Jwt:Audience"]
+        };
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var token = tokenHandler.CreateToken(tokendes);
+            return tokenHandler.WriteToken(token);
+        }
+
+        private string GenerateRefreshToken()
+        {
+            var randomNumber = new byte[32];
+            using (var rng = RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(randomNumber);
+                return Convert.ToBase64String(randomNumber);
+            }
         }
 
             public List<UserDetails> Get_All_User_Detail()

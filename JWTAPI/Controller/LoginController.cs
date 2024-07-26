@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using JWTAPI.BussinessLogic;
+using JWTAPI.Models;
 using Microsoft.AspNetCore.Mvc;
 
 namespace JWTAPI.Controller
@@ -13,17 +14,25 @@ namespace JWTAPI.Controller
     {
         private readonly UserLists _userLists;
 
-        public LoginController (UserLists userLists)
+        public LoginController(UserLists userLists)
         {
             _userLists = userLists;
         }
 
-        [HttpGet]
-        public string LoginUser (string email, string password)
+        [HttpPost("login")]
+        public ActionResult<UserDetails> LoginUser([FromBody] LoginModel model)
         {
-            var result = _userLists.LoginCheck(email,password);
-            return result;
-            
+            if (model == null || string.IsNullOrEmpty(model.Email) || string.IsNullOrEmpty(model.Password))
+            {
+                return BadRequest("Invalid login data");
+            }
+
+            var result = _userLists.LoginCheck(model.Email, model.Password);
+            if (result != null)
+            {
+                return Ok(result);
+            }
+            return Unauthorized("Invalid email or password");
         }
     }
 }

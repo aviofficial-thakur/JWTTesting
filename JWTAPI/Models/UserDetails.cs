@@ -11,5 +11,7 @@ namespace JWTAPI.Models
         public string name { get; set; } = string.Empty;
 
         public string AccessToken {get;set;} 
+
+        public string RefreshToken {get;set;}
     }
 }
